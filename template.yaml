@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Sample SAM app with PostgreSQL, DynamoDB, TypeScript & Python Lambdas.
+
+Globals:
+  Function:
+    Timeout: 10
+
+Resources:
+
+  UserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: UserEvents
+      BillingMode: PAYPERREQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+
+  TSLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ts-lambda/
+      Handler: dist/app.handler
+      Runtime: nodejs18.x
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /user
+            Method: post
+      Environment:
+        Variables:
+          PGHOST: "host.docker.internal"
+          PGUSER: "postgres"
+          PGPASSWORD: "example"
+          PGDATABASE: "users"
+          PGPORT: "5432"
+
+  PyLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: py-lambda/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /user-python
+            Method: post
+      Environment:
+        Variables:
+          PGHOST: "host.docker.internal"
+          PGUSER: "postgres"
+          PGPASSWORD: "example"
+          PGDATABASE: "users"
+          PGPORT: "5432"
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint"
+    Value:
+      Fn::Sub: "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/user"
