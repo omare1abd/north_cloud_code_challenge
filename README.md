@@ -112,12 +112,12 @@ curl "https://<your-api-id>[.execute-api.us-east-1.amazonaws.com/Prod/alerts?sou
 ```json
 [
     {
-        "record_id": "university_mental_health_iot_dataset.csv",
+        "record_id": "{file_name}{user_id}}",
         "stress_score": 45,
         "timestamp": "2024-01-15T10:00:00Z"
     },
     {
-        "record_id": "university_mental_health_iot_dataset.csv",
+        "record_id": "{file_name}{user_id}",
         "stress_score": 52,
         "timestamp": "2024-01-15T10:05:00Z"
     }
