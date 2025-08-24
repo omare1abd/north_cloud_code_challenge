@@ -1,0 +1,20 @@
+# AWS SAM
+# Ignore the build artifacts directory
+.aws-sam/
+
+# Python
+# Ignore virtual environments
+.venv/
+venv/
+env/
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / Editor specific
+.idea/
+.vscode/
+*.swp
