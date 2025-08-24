@@ -1,69 +1,119 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Sample SAM app with PostgreSQL, DynamoDB, TypeScript & Python Lambdas.
+Description: >
+  SAM template for the High-Stress User detection application.
+  This stack deploys an S3 bucket, SQS queue, DynamoDB table, and a Lambda function
+  with both SQS and API Gateway triggers.
 
-Globals:
-  Function:
-    Timeout: 10
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: "Name for the S3 bucket to upload CSV files. Must be globally unique."
+    Default: "high-stress-user-uploads-unique-name"
+  DynamoDbTableName:
+    Type: String
+    Description: "Name for the DynamoDB table to store high-stress user alerts."
+    Default: "HighStressUsers"
 
 Resources:
+  # ------------------------------------------------------------
+  # S3 Bucket for CSV Uploads
+  # ------------------------------------------------------------
+  CsvUploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ObjectCreated:*
+            Queue: !GetAtt CsvProcessingQueue.Arn
 
-  UserTable:
+  # ------------------------------------------------------------
+  # SQS Queue to receive S3 notifications
+  # ------------------------------------------------------------
+  CsvProcessingQueue:
+    Type: AWS::SQS::Queue
+
+  # Give S3 permission to send messages to the SQS queue
+  S3ToSqsPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref CsvProcessingQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "s3.amazonaws.com"
+            Action: "sqs:SendMessage"
+            Resource: !GetAtt CsvProcessingQueue.Arn
+            Condition:
+              ArnEquals:
+                "aws:SourceArn": !GetAtt CsvUploadBucket.Arn
+
+  # ------------------------------------------------------------
+  # DynamoDB Table to store results
+  # ------------------------------------------------------------
+  HighStressUsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: UserEvents
-      BillingMode: PAYPERREQUEST
+      TableName: !Ref DynamoDbTableName
       AttributeDefinitions:
-        - AttributeName: userId
-          AttributeType: S
+        - AttributeName: "PK"
+          AttributeType: "S"
+        - AttributeName: "SK"
+          AttributeType: "S"
       KeySchema:
-        - AttributeName: userId
-          KeyType: HASH
-      StreamSpecification:
-        StreamViewType: NEW_IMAGE
+        - AttributeName: "PK"
+          KeyType: "HASH" # Partition key
+        - AttributeName: "SK"
+          KeyType: "RANGE" # Sort key
+      BillingMode: PAY_PER_REQUEST
 
-  TSLambda:
+  # ------------------------------------------------------------
+  # The Lambda Function
+  # ------------------------------------------------------------
+  HighStressFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ts-lambda/
-      Handler: dist/app.handler
-      Runtime: nodejs18.x
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /user
-            Method: post
-      Environment:
-        Variables:
-          PGHOST: "host.docker.internal"
-          PGUSER: "postgres"
-          PGPASSWORD: "example"
-          PGDATABASE: "users"
-          PGPORT: "5432"
-
-  PyLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: py-lambda/
-      Handler: app.lambda_handler
+      CodeUri: . # Assumes your app.py is in the root directory
+      Handler: app.lambda_handler # The file and function name
       Runtime: python3.11
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /user-python
-            Method: post
+      Timeout: 60 # Seconds
+      MemorySize: 512 # Megabytes
       Environment:
         Variables:
-          PGHOST: "host.docker.internal"
-          PGUSER: "postgres"
-          PGPASSWORD: "example"
-          PGDATABASE: "users"
-          PGPORT: "5432"
+          DYNAMODB_TABLE_NAME: !Ref DynamoDbTableName
+          AWS_REGION: !Ref AWS::Region
+      Policies:
+        # Grant permissions to access other resources
+        - S3ReadPolicy:
+            BucketName: !Ref S3BucketName
+        - SQSPollerPolicy:
+            QueueName: !GetAtt CsvProcessingQueue.Name
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDbTableName
+      Events:
+        # 1. Trigger for API Gateway
+        ApiEndpoint:
+          Type: Api
+          Properties:
+            Path: /alerts
+            Method: get
+        # 2. Trigger for SQS
+        SqsTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt CsvProcessingQueue.Arn
+            BatchSize: 1 # Process one file at a time
 
 Outputs:
   ApiUrl:
-    Description: "API Gateway endpoint"
-    Value:
-      Fn::Sub: "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/user"
+    Description: "API Gateway endpoint URL for the GET /alerts function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/alerts"
+  S3Bucket:
+    Description: "Name of the S3 bucket for CSV file uploads"
+    Value: !Ref CsvUploadBucket
+  DynamoDBTable:
+    Description: "Name of the DynamoDB table storing alerts"
+    Value: !Ref HighStressUsersTable
