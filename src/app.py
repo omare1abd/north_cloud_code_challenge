@@ -9,6 +9,7 @@ from src.config import LOCAL_CSV_FILE_NAME
 from src.utils import DecimalEncoder
 from src.processing import process_csv_file
 
+
 def get_alerts(event):
     """Handles the GET /alerts API request."""
     try:
@@ -17,16 +18,18 @@ def get_alerts(event):
         if not query_params or "source_file" not in query_params:
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": "The 'source_file' query parameter is required."})
+                "body": json.dumps(
+                    {"error": "The 'source_file' query parameter is required."}
+                ),
             }
 
         source_file = query_params["source_file"]
         pk_to_query = f"SOURCEFILE#{source_file}"
         print(f"Querying for alerts with PK: {pk_to_query}")
 
-        response = table.query(KeyConditionExpression=Key('PK').eq(pk_to_query))
+        response = table.query(KeyConditionExpression=Key("PK").eq(pk_to_query))
         items = response.get("Items", [])
-        
+
         alerts = []
         for item in items:
             try:
@@ -34,13 +37,17 @@ def get_alerts(event):
                 iso_timestamp = dt_object.isoformat() + "Z"
             except (KeyError, ValueError):
                 iso_timestamp = None
-            
-            alerts.append({
-                "record_id": item.get("SourceFile", "unknown-source"),
-                "stress_score": int(item.get("OriginalStressLevel", 0)),
-                "timestamp": iso_timestamp,
-            })
-            
+
+            alerts.append(
+                {
+                    "record_id": item.get("SourceFile", "unknown-source")
+                    + "#"
+                    + item.get("SK", "unknown-id"),
+                    "stress_score": int(item.get("OriginalStressLevel", 0)),
+                    "timestamp": iso_timestamp,
+                }
+            )
+
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
@@ -53,6 +60,7 @@ def get_alerts(event):
             "body": json.dumps({"error": "Could not retrieve alerts."}),
         }
 
+
 def handle_sqs_event(event):
     """Handles the SQS event trigger from S3."""
     print("--- Running in Cloud Mode (Polling SQS) ---")
@@ -63,15 +71,16 @@ def handle_sqs_event(event):
             for s3_record in s3_event.get("Records", []):
                 s3_bucket = s3_record["s3"]["bucket"]["name"]
                 s3_key = s3_record["s3"]["object"]["key"]
-                
+
                 download_path = f"/tmp/{os.path.basename(s3_key)}"
                 print(f"Downloading s3://{s3_bucket}/{s3_key} to {download_path}")
                 s3_client.download_file(s3_bucket, s3_key, download_path)
-                
+
                 process_csv_file(download_path)
         except Exception as e:
             print(f"Error processing SQS record: {e}")
             continue
+
 
 def lambda_handler(event, context):
     """Main Lambda function handler."""
@@ -90,7 +99,11 @@ def lambda_handler(event, context):
             return {"statusCode": 404, "body": json.dumps({"error": "Not Found"})}
 
     # SQS event
-    if "Records" in event and "eventSource" in event["Records"][0] and event["Records"][0]["eventSource"] == "aws:sqs":
+    if (
+        "Records" in event
+        and "eventSource" in event["Records"][0]
+        and event["Records"][0]["eventSource"] == "aws:sqs"
+    ):
         handle_sqs_event(event)
         return {"statusCode": 200, "body": "Processing complete."}
 
@@ -102,4 +115,3 @@ def lambda_handler(event, context):
 
     print("Handler received unroutable event:", event)
     return {"statusCode": 400, "body": "Unrecognized event source."}
-

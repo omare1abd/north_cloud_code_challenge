@@ -10,8 +10,9 @@ from src.config import (
     STRESS_THRESHOLD,
     NUMERICAL_FEATURES,
     TRAINING_COLUMNS,
-    RUNNING_LOCALLY
+    RUNNING_LOCALLY,
 )
+
 
 def process_csv_file(file_path):
     """
@@ -56,7 +57,7 @@ def process_csv_file(file_path):
             if prediction == 1:
                 user_id = str(uuid.uuid4())
                 timestamp_str = row["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-                
+
                 pk = f"SOURCEFILE#{source_filename}"
                 sk = f"LOCATION#{row['location_id']}#USERID#{user_id}"
 
@@ -73,14 +74,12 @@ def process_csv_file(file_path):
                     "MoodScore": Decimal(str(row["mood_score"])),
                     "NoiseLevelDB": Decimal(str(row["noise_level_db"])),
                 }
-                
+
                 if not RUNNING_LOCALLY:
                     table.put_item(Item=item)
                 items_inserted += 1
         except Exception as e:
             print(f"Error processing row {index}: {e}")
             continue
-            
-    print(
-        f"Successfully processed {items_inserted} records from {file_path}."
-    )
+
+    print(f"Successfully processed {items_inserted} records from {file_path}.")
