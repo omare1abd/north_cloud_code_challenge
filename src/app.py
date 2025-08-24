@@ -17,12 +17,12 @@ logging.basicConfig(
 
 
 def get_alerts(event):
-    """Handles the GET /alerts API request."""
-    logging.info("API request received for GET /alerts.")
+    """Handles the GET /alerts API request, fetching all results at once."""
+    logging.info("API request received for GET /alerts to fetch all items.")
     try:
-        query_params = event.get("queryStringParameters")
+        query_params = event.get("queryStringParameters") or {}
 
-        if not query_params or "source_file" not in query_params:
+        if "source_file" not in query_params:
             logging.warning("API request missing 'source_file' query parameter.")
             return {
                 "statusCode": 400,
@@ -33,14 +33,33 @@ def get_alerts(event):
 
         source_file = query_params["source_file"]
         pk_to_query = f"SOURCEFILE#{source_file}"
-        logging.info(f"Querying DynamoDB for alerts with PK: {pk_to_query}")
+        logging.info(f"Querying DynamoDB for all alerts with PK: {pk_to_query}")
 
-        response = table.query(KeyConditionExpression=Key("PK").eq(pk_to_query))
-        items = response.get("Items", [])
-        logging.info(f"Found {len(items)} items in DynamoDB for the given source file.")
+        all_items = []
+        query_kwargs = {
+            "KeyConditionExpression": Key("PK").eq(pk_to_query),
+        }
 
+        # Loop until all pages are fetched
+        while True:
+            response = table.query(**query_kwargs)
+            all_items.extend(response.get("Items", []))
+
+            # Check if there are more items to fetch
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break  # Exit the loop if this is the last page
+
+            # Set the starting point for the next page
+            query_kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+        logging.info(
+            f"Found a total of {len(all_items)} items for the given source file."
+        )
+
+        # Process all fetched items
         alerts = []
-        for item in items:
+        for item in all_items:
             try:
                 dt_object = datetime.strptime(item["Timestamp"], "%Y-%m-%d %H:%M:%S")
                 iso_timestamp = dt_object.isoformat() + "Z"
@@ -59,7 +78,7 @@ def get_alerts(event):
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps(alerts, cls=DecimalEncoder),
+            "body": json.dumps({"alerts": alerts}, cls=DecimalEncoder),
         }
     except Exception as e:
         logging.error("Error processing GET /alerts request.", exc_info=True)
